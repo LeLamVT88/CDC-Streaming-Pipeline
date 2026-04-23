@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+
+# Spark
+checkpoints/
+logs/
+
+# Airflow
+airflow.db
+airflow-webserver.pid
+
+# Env
+.env
+
+# Mac
+.DS_Store
+
+# IDE
+.vscode/
+
+# Data (nếu có file lớn)
+*.csv
+*.parquet
+
+# Docker
+*.log
