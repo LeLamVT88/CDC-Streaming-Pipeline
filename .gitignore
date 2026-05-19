@@ -6,6 +6,9 @@ __pycache__/
 checkpoints/
 logs/
 
+# Data directory
+data/
+
 # Airflow
 airflow.db
 airflow-webserver.pid
@@ -22,6 +25,9 @@ airflow-webserver.pid
 # Data (nếu có file lớn)
 *.csv
 *.parquet
+
+# Documentation
+SILVER_PIPELINE.md
 
 # Docker
 *.log

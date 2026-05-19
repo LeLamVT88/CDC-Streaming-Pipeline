@@ -24,7 +24,7 @@ services:
       POSTGRES_PASSWORD: "airflow"
       POSTGRES_DB: "airflow"
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -135,7 +135,11 @@ services:
     depends_on:
       - postgres
     command: >
-      bash -c "airflow db migrate && airflow users create \
+      bash -c "for i in {1..30}; do 
+        echo 'Attempt $i: Waiting for Postgres...'; 
+        airflow db migrate && break || sleep 5; 
+      done; 
+      airflow users create \
       --username admin \
       --password admin \
       --firstname Admin \
