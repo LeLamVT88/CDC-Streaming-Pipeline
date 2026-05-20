@@ -1,0 +1,66 @@
+# CDC Streaming Pipeline Configuration
+
+## MySQL Configuration
+mysql:
+  host: localhost
+  port: 3306
+  user: root
+  password: root
+  database: app
+  driver: pymysql
+
+## Kafka Configuration
+kafka:
+  bootstrap_servers: localhost:9092
+  schema_registry_url: http://localhost:8081
+  
+  # CDC Topic prefix (created by Debezium)
+  cdc_topic_prefix: cdc.app
+  
+  # Consumer group
+  consumer_group: spark-silver-consumer
+  
+  # Topic names (auto-created by Debezium)
+  topics:
+    customers: cdc.app.olist_customers_dataset
+    orders: cdc.app.olist_orders_dataset
+    order_items: cdc.app.olist_order_items_dataset
+
+## Spark Configuration
+spark:
+  app_name: CDCStreamingPipeline
+  master: local[*]
+  
+  # Streaming settings
+  streaming:
+    duration_seconds: 30
+    checkpoint_dir: checkpoints/
+    
+  # Performance tuning
+  executors: 4
+  executor_memory: 2g
+  executor_cores: 2
+
+## Data Paths
+paths:
+  seed: db/seed
+  bronze: data/bronze
+  silver: data/silver
+  checkpoint: checkpoints/
+  
+  # Parquet/Delta output
+  format: parquet  # or "delta"
+  mode: overwrite
+
+## Debezium Connector Settings
+debezium:
+  connector_class: io.debezium.connector.mysql.MySqlConnector
+  tasks_max: 1
+  snapshot_mode: initial  # or "incremental", "when_needed", "never"
+  tombstones_on_delete: true
+  include_schema_changes: true
+
+## Logging
+logging:
+  level: INFO  # DEBUG, INFO, WARN, ERROR
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"

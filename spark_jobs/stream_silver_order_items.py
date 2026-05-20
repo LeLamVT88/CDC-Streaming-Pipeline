@@ -1,7 +1,7 @@
 """Silver Layer - Order Items Data Cleaning"""
 
 from pyspark.sql.functions import col, trim, to_timestamp, when, round
-from silver_utils import get_spark, deduplicate, add_metadata, write_delta
+from spark_jobs.silver_utils import get_spark, deduplicate, add_metadata, write_delta
 
 def clean_order_items(spark, input_path, output_path):
     # Detect format: local (parquet) or dbfs (delta)

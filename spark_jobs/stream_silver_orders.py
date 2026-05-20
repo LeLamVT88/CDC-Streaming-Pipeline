@@ -1,7 +1,7 @@
 """Silver Layer - Orders Data Cleaning"""
 
 from pyspark.sql.functions import col, trim, lower, to_timestamp, when, datediff
-from silver_utils import get_spark, deduplicate, add_metadata, write_delta
+from spark_jobs.silver_utils import get_spark, deduplicate, add_metadata, write_delta
 
 VALID_STATUS = ['pending', 'processing', 'shipped', 'delivered', 'canceled', 'unavailable', 'on_return', 'returned']
 

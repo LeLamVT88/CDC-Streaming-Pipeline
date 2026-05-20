@@ -26,8 +26,5 @@ airflow-webserver.pid
 *.csv
 *.parquet
 
-# Documentation
-SILVER_PIPELINE.md
-
 # Docker
 *.log
