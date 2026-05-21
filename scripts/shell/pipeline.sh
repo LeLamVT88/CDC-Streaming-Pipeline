@@ -124,7 +124,7 @@ inspect() {
     info "Inspecting data layers"
     source "$PROJECT_DIR/.venv/bin/activate"
     export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
-    python3 "$PROJECT_DIR/scripts/inspect.py" "$@"
+    python3 "$PROJECT_DIR/scripts/inspect_pipeline.py" "$@"
 }
 
 clean() {

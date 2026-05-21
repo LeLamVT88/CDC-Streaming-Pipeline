@@ -31,7 +31,7 @@ DATASETS = [
 def load_seed_to_bronze(spark):
     print("\n[bronze] CSV → bronze parquet\n")
     BRONZE_DIR.mkdir(parents=True, exist_ok=True)
-    for file_name, _, label in DATASETS:
+    for file_name, _, label, _ in DATASETS:
         csv_path = SEED_DIR / f"{file_name}.csv"
         out_path = BRONZE_DIR / file_name
         print(f"  {file_name}.csv ({label})")
