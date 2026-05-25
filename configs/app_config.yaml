@@ -1,66 +1,136 @@
-# CDC Streaming Pipeline Configuration
+# S3 Lakehouse DWH configuration.
+# Runtime overrides:
+# DWH_RAW_PATH, DWH_BRONZE_PATH, DWH_CLEAN_PATH, DWH_SILVER_PATH,
+# DWH_MAPPING_PATH, DWH_GOLD_PATH, DWH_S3_BUCKET, DWH_S3_PREFIX,
+# DWH_ATHENA_DATABASE, DWH_ATHENA_LOCATION.
 
-## MySQL Configuration
-mysql:
-  host: localhost
-  port: 3306
-  user: root
-  password: root
-  database: app
-  driver: pymysql
+project:
+  name: S3LakehouseDWH
 
-## Kafka Configuration
-kafka:
-  bootstrap_servers: localhost:9092
-  schema_registry_url: http://localhost:8081
-  
-  # CDC Topic prefix (created by Debezium)
-  cdc_topic_prefix: cdc.app
-  
-  # Consumer group
-  consumer_group: spark-silver-consumer
-  
-  # Topic names (auto-created by Debezium)
-  topics:
-    customers: cdc.app.olist_customers_dataset
-    orders: cdc.app.olist_orders_dataset
-    order_items: cdc.app.olist_order_items_dataset
-
-## Spark Configuration
 spark:
-  app_name: CDCStreamingPipeline
+  app_name: S3LakehouseDWH
   master: local[*]
-  
-  # Streaming settings
-  streaming:
-    duration_seconds: 30
-    checkpoint_dir: checkpoints/
-    
-  # Performance tuning
-  executors: 4
-  executor_memory: 2g
-  executor_cores: 2
+  log_level: WARN
+  timezone: UTC
+  kafka_package: org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0
+  s3_package: org.apache.hadoop:hadoop-aws:3.3.4
+  shuffle_partitions: 8
 
-## Data Paths
 paths:
-  seed: db/seed
-  bronze: data/bronze
-  silver: data/silver
-  checkpoint: checkpoints/
-  
-  # Parquet/Delta output
-  format: parquet  # or "delta"
-  mode: overwrite
+  raw: db/seed
+  bronze: data/lakehouse/bronze
+  clean: data/lakehouse/clean
+  silver: data/lakehouse/silver
+  mapping: data/lakehouse/mapping
+  gold: data/lakehouse/gold
+  checkpoints: data/lakehouse/checkpoints
+  athena_ddl: docs/athena_lakehouse_ddl.sql
 
-## Debezium Connector Settings
-debezium:
-  connector_class: io.debezium.connector.mysql.MySqlConnector
-  tasks_max: 1
-  snapshot_mode: initial  # or "incremental", "when_needed", "never"
-  tombstones_on_delete: true
-  include_schema_changes: true
+storage:
+  format: parquet
+  write_mode: overwrite
+  s3a:
+    endpoint: ""
+    region: ap-southeast-1
+    credentials_provider: com.amazonaws.auth.DefaultAWSCredentialsProviderChain
 
-## Logging
-logging:
-  level: INFO  # DEBUG, INFO, WARN, ERROR
-  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+aws:
+  s3_bucket: ""
+  s3_prefix: dwh
+  athena_database: s3_lakehouse_dwh
+  athena_s3_location: ""
+
+source_adapters:
+  cdc:
+    enabled: false
+    mysql:
+      host: localhost
+      port: 3306
+      user: root
+      password: root
+      database: app
+      driver: pymysql
+    kafka:
+      bootstrap_servers: localhost:9092
+      connect_url: http://localhost:8083
+      schema_registry_url: http://localhost:8081
+      connector_name: mysql-source-connector
+      topic_prefix: cdc.app
+      starting_offsets: earliest
+      ending_offsets: latest
+    debezium:
+      connector_class: io.debezium.connector.mysql.MySqlConnector
+      database_hostname: mysql
+      database_port: 3306
+      server_id: 184054
+      topic_prefix: cdc
+      snapshot_mode: initial
+      include_schema_changes: "false"
+      tombstones_on_delete: "false"
+      decimal_handling_mode: string
+      schema_history_bootstrap_servers: kafka:9092
+    seed:
+      chunksize: 50000
+      if_exists: replace
+
+datasets:
+  - source: olist_customers_dataset
+    target: customers
+    label: Customers
+    domain: ecommerce
+    primary_key: [customer_id]
+    partition_by: [customer_state]
+
+  - source: olist_orders_dataset
+    target: orders
+    label: Orders
+    domain: ecommerce
+    primary_key: [order_id]
+    partition_by: [order_status]
+
+  - source: olist_order_items_dataset
+    target: order_items
+    label: Order Items
+    domain: ecommerce
+    primary_key: [order_id, order_item_id]
+
+  - source: olist_order_payments_dataset
+    target: order_payments
+    label: Order Payments
+    domain: ecommerce
+    primary_key: [order_id, payment_sequential]
+    partition_by: [payment_type]
+
+  - source: olist_products_dataset
+    target: products
+    label: Products
+    domain: ecommerce
+    primary_key: [product_id]
+    partition_by: [product_category_name]
+
+  - source: olist_sellers_dataset
+    target: sellers
+    label: Sellers
+    domain: ecommerce
+    primary_key: [seller_id]
+    partition_by: [seller_state]
+
+  - source: olist_order_reviews_dataset
+    target: order_reviews
+    label: Order Reviews
+    domain: ecommerce
+    primary_key: [review_id, order_id]
+
+  - source: olist_geolocation_dataset
+    target: geolocation
+    label: Geolocation
+    domain: ecommerce
+    primary_key: [geolocation_zip_code_prefix, geolocation_city, geolocation_state]
+    partition_by: [geolocation_state]
+
+  - source: product_category_name_translation
+    target: product_category_translation
+    label: Product Category Translation
+    domain: ecommerce
+    primary_key: [product_category_name]
+

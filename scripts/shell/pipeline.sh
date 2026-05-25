@@ -1,171 +1,156 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+VENV_DIR="$PROJECT_DIR/.venv"
+COMPOSE_FILES=(-f "$PROJECT_DIR/docker/docker-compose.yml")
 
-info() { echo -e "${BLUE}ℹ $1${NC}"; }
-ok() { echo -e "${GREEN}✓ $1${NC}"; }
-warn() { echo -e "${YELLOW}⚠ $1${NC}"; }
+info() { printf "\033[0;34m[info]\033[0m %s\n" "$1"; }
+ok() { printf "\033[0;32m[ok]\033[0m %s\n" "$1"; }
+warn() { printf "\033[1;33m[warn]\033[0m %s\n" "$1"; }
 
-docker_running() {
-    docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$1"
+compose() {
+    if docker compose version >/dev/null 2>&1; then
+        docker compose "${COMPOSE_FILES[@]}" "$@"
+    else
+        docker-compose "${COMPOSE_FILES[@]}" "$@"
+    fi
+}
+
+compose_with_cdc() {
+    if docker compose version >/dev/null 2>&1; then
+        docker compose -f "$PROJECT_DIR/docker/docker-compose.yml" -f "$PROJECT_DIR/docker/docker-compose.cdc.yml" "$@"
+    else
+        docker-compose -f "$PROJECT_DIR/docker/docker-compose.yml" -f "$PROJECT_DIR/docker/docker-compose.cdc.yml" "$@"
+    fi
+}
+
+python_bin() {
+    if [ -x "$VENV_DIR/Scripts/python.exe" ]; then
+        printf "%s" "$VENV_DIR/Scripts/python.exe"
+    elif [ -x "$VENV_DIR/bin/python" ]; then
+        printf "%s" "$VENV_DIR/bin/python"
+    elif command -v python >/dev/null 2>&1; then
+        printf "%s" "python"
+    else
+        printf "%s" "python3"
+    fi
+}
+
+activate_env() {
+    export PYTHONPATH="$PROJECT_DIR:${PYTHONPATH:-}"
 }
 
 setup() {
-    info "Setup Python environment"
-    if [ ! -d "$PROJECT_DIR/.venv" ]; then
-        python3 -m venv "$PROJECT_DIR/.venv"
-        source "$PROJECT_DIR/.venv/bin/activate"
-        pip install -q pyspark sqlalchemy pymysql pandas confluent-kafka
-        ok "Venv created"
-    else
-        ok "Venv exists"
+    info "Setting up Python environment"
+    if [ ! -d "$VENV_DIR" ]; then
+        python -m venv "$VENV_DIR" 2>/dev/null || python3 -m venv "$VENV_DIR"
     fi
+    "$(python_bin)" -m pip install --upgrade pip
+    "$(python_bin)" -m pip install -r "$PROJECT_DIR/requirements.txt"
+    ok "Core DWH environment ready"
+}
+
+setup_cdc() {
+    setup
+    "$(python_bin)" -m pip install -r "$PROJECT_DIR/requirements-cdc.txt"
+    ok "CDC source dependencies ready"
 }
 
 start_infra() {
-    info "Starting Docker infrastructure"
-    cd "$PROJECT_DIR/docker"
-    docker-compose up -d
-    sleep 15
-    ok "Infrastructure started"
-    cd "$PROJECT_DIR"
+    info "Starting Airflow orchestration services"
+    compose up -d --build
+    ok "Airflow services started"
+}
+
+start_cdc_infra() {
+    info "Starting Airflow + optional CDC source services"
+    compose_with_cdc up -d --build
+    ok "Airflow and CDC services started"
 }
 
 stop_infra() {
-    info "Stopping Docker"
-    cd "$PROJECT_DIR/docker"
-    docker-compose down
-    ok "Stopped"
-    cd "$PROJECT_DIR"
+    info "Stopping services"
+    compose_with_cdc down
+    ok "Services stopped"
 }
 
-seed() {
-    info "Seeding MySQL"
-    source "$PROJECT_DIR/.venv/bin/activate"
-    export PYTHONPATH="$PROJECT_DIR/scripts/ingestion:$PROJECT_DIR:$PYTHONPATH"
-    python3 "$PROJECT_DIR/scripts/ingestion/seed_to_mysql.py"
-    ok "MySQL seeded"
+lakehouse() {
+    activate_env
+    "$(python_bin)" "$PROJECT_DIR/scripts/lakehouse.py" "$@"
 }
 
-wait_for_connect() {
-    info "Waiting for Kafka Connect (localhost:8083)..."
-    local i
-    for i in $(seq 1 40); do
-        if curl -sf http://localhost:8083/ >/dev/null 2>&1; then
-            ok "Kafka Connect is ready"
-            return 0
-        fi
-        sleep 5
-    done
-    warn "Kafka Connect not ready after 200s — check: docker logs kafka-connect --tail 50"
-    return 1
-}
-
-deploy_connector() {
-    info "Deploying Debezium connector"
-    if ! docker_running kafka-connect; then
-        warn "Container kafka-connect is not running — run: ./pipeline.sh start"
-        return 1
-    fi
-    wait_for_connect || return 1
-
-    if curl -sf http://localhost:8083/connectors 2>/dev/null | grep -q mysql-source-connector; then
-        warn "Connector already deployed"
-        curl -sf http://localhost:8083/connectors/mysql-source-connector/status | python3 -m json.tool 2>/dev/null || true
-        return 0
-    fi
-
-    local response http_code
-    response=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8083/connectors \
-        -H "Content-Type: application/json" \
-        -d @"$PROJECT_DIR/kafka/mysql-source-connector.json")
-    http_code=$(echo "$response" | tail -1)
-    response=$(echo "$response" | sed '$d')
-
-    if [[ "$http_code" =~ ^2 ]]; then
-        ok "Connector deployed (HTTP $http_code)"
-    else
-        warn "Deploy failed (HTTP $http_code)"
-        echo "$response"
-        return 1
-    fi
-
-    sleep 5
-    info "Connector status:"
-    curl -sf http://localhost:8083/connectors/mysql-source-connector/status | python3 -m json.tool
-}
-
-pipeline() {
-    info "Running pipeline (silver: CSV → bronze → silver)"
-    source "$PROJECT_DIR/.venv/bin/activate"
-    export PYTHONPATH="$PROJECT_DIR/scripts/ingestion:$PROJECT_DIR:$PYTHONPATH"
-    python3 "$PROJECT_DIR/scripts/pipeline.py" --mode silver
-}
-
-silver() {
-    pipeline
-}
-
-cdc() {
-    info "Running CDC ingest (Kafka → bronze)"
-    source "$PROJECT_DIR/.venv/bin/activate"
-    export PYTHONPATH="$PROJECT_DIR/scripts/ingestion:$PROJECT_DIR:$PYTHONPATH"
-    python3 "$PROJECT_DIR/scripts/pipeline.py" --mode cdc "$@"
+cdc_source() {
+    activate_env
+    "$(python_bin)" "$PROJECT_DIR/scripts/cdc_source.py" "$@"
 }
 
 inspect() {
-    info "Inspecting data layers"
-    source "$PROJECT_DIR/.venv/bin/activate"
-    export PYTHONPATH="$PROJECT_DIR:$PYTHONPATH"
-    python3 "$PROJECT_DIR/scripts/inspect_pipeline.py" "$@"
+    activate_env
+    "$(python_bin)" "$PROJECT_DIR/scripts/inspect_lakehouse.py" "$@"
 }
 
-clean() {
-    warn "Cleaning local parquet data"
-    rm -rf "$PROJECT_DIR/data/bronze"/* "$PROJECT_DIR/data/silver"/* "$PROJECT_DIR/checkpoints"/* 2>/dev/null || true
-    find "$PROJECT_DIR/data/bronze" -maxdepth 1 -type d -name '*_checkpoint' -exec rm -rf {} + 2>/dev/null || true
-    ok "Local data cleaned"
-}
-
-full_setup() {
-    setup
-    start_infra
-    seed
-    deploy_connector
-    ok "Full setup complete"
+clean_local() {
+    warn "Removing generated local lakehouse data and Athena DDL"
+    rm -rf "$PROJECT_DIR/data/lakehouse"
+    rm -f "$PROJECT_DIR/docs/athena_lakehouse_ddl.sql"
+    mkdir -p "$PROJECT_DIR/data/lakehouse/bronze" \
+        "$PROJECT_DIR/data/lakehouse/clean" \
+        "$PROJECT_DIR/data/lakehouse/silver" \
+        "$PROJECT_DIR/data/lakehouse/mapping" \
+        "$PROJECT_DIR/data/lakehouse/gold" \
+        "$PROJECT_DIR/data/lakehouse/checkpoints"
+    ok "Generated local lakehouse data removed"
 }
 
 case "${1:-help}" in
-    setup) setup ;;
-    start) start_infra ;;
-    stop) stop_infra ;;
-    seed) seed ;;
-    deploy-connector) deploy_connector ;;
-    pipeline|silver) pipeline ;;
-    cdc) shift; cdc "$@" ;;
+    setup) shift; setup "$@" ;;
+    setup-cdc) shift; setup_cdc "$@" ;;
+    start) shift; start_infra "$@" ;;
+    start-cdc) shift; start_cdc_infra "$@" ;;
+    stop) shift; stop_infra "$@" ;;
+    validate) shift; lakehouse --mode validate "$@" ;;
+    bronze) shift; lakehouse --mode bronze "$@" ;;
+    clean) shift; lakehouse --mode clean "$@" ;;
+    silver) shift; lakehouse --mode silver "$@" ;;
+    mapping) shift; lakehouse --mode mapping "$@" ;;
+    gold) shift; lakehouse --mode gold "$@" ;;
+    all|pipeline) shift; lakehouse --mode all "$@" ;;
+    athena-ddl) shift; lakehouse --mode athena-ddl "$@" ;;
     inspect) shift; inspect "$@" ;;
-    clean) clean ;;
-    full-setup) full_setup ;;
+    cdc) shift; cdc_source "$@" ;;
+    clean-local) shift; clean_local "$@" ;;
     *)
-        echo "Usage: $0 <command>"
-        echo ""
-        echo "Commands:"
-        echo "  setup            Create Python venv and install deps"
-        echo "  start            Start Docker infrastructure"
-        echo "  stop             Stop Docker infrastructure"
-        echo "  seed             Load CSV seed data into MySQL"
-        echo "  deploy-connector Deploy Debezium MySQL connector"
-        echo "  pipeline|silver  CSV → bronze → silver"
-        echo "  cdc              Kafka → bronze (--seed-mysql optional)"
-        echo "  inspect          Inspect MySQL/bronze/silver (--validate for DQ)"
-        echo "  clean            Remove local bronze/silver/checkpoints only"
-        echo "  full-setup       setup + start + seed + deploy-connector"
+        cat <<USAGE
+Usage: ./pipeline.sh <command> [args]
+
+Core DWH:
+  setup          Create/update .venv and install core requirements
+  start          Start Airflow only
+  validate       Validate config and raw CSV files
+  bronze         Load raw CSV files into bronze
+  clean          Transform bronze into clean
+  silver         Transform clean into silver
+  mapping        Build conformed facts and dimensions
+  gold           Build analytical marts
+  all            Run bronze -> clean -> silver -> mapping -> gold
+  athena-ddl     Generate Athena external table DDL
+  inspect        Inspect lakehouse layers and optional DQ metrics
+  clean-local    Remove generated local lakehouse data
+
+Optional CDC source:
+  setup-cdc      Install core + CDC requirements
+  start-cdc      Start Airflow plus MySQL/Kafka/Debezium services
+  cdc            Run CDC source adapter: --mode seed|deploy-connector|bronze|all
+
+Examples:
+  ./pipeline.sh all --tables customers,orders,order_items
+  ./pipeline.sh inspect --validate
+  ./pipeline.sh setup-cdc
+  ./pipeline.sh start-cdc
+  ./pipeline.sh cdc --mode all
+USAGE
         ;;
 esac
+

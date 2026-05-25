@@ -1,195 +1,78 @@
-services:
-  mysql:
-    image: mysql:8.0
-    container_name: mysql
-    command: >
-      --server-id=1
-      --log-bin=mysql-bin
-      --binlog-format=ROW
-      --binlog-row-image=FULL
-      --binlog-expire-logs-seconds=864000
-    environment:
-      MYSQL_ROOT_PASSWORD: "root"
-      MYSQL_DATABASE: "app"
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
+x-airflow-common: &airflow-common
+  build:
+    context: ..
+    dockerfile: docker/airflow/Dockerfile
+  image: s3-lakehouse-dwh-airflow:local
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/s3-lakehouse-dwh/airflows/dags
+    AIRFLOW__CORE__FERNET_KEY: ""
+    AIRFLOW__WEBSERVER__SECRET_KEY: temporary-secret-key
+    DWH_CONFIG: /opt/s3-lakehouse-dwh/configs/app_config.yaml
+    PYTHONPATH: /opt/s3-lakehouse-dwh
+  volumes:
+    - ../:/opt/s3-lakehouse-dwh
+    - airflow_logs:/opt/airflow/logs
+  depends_on:
+    postgres:
+      condition: service_healthy
 
+services:
   postgres:
     image: postgres:16
-    container_name: postgres
+    container_name: dwh-postgres
     environment:
-      POSTGRES_USER: "airflow"
-      POSTGRES_PASSWORD: "airflow"
-      POSTGRES_DB: "airflow"
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
-  phpmyadmin:
-    image: phpmyadmin:latest
-    container_name: phpmyadmin
-    environment:
-      PMA_HOST: mysql
-      PMA_PORT: 3306
-      PMA_USER: root
-      PMA_PASSWORD: root
-    ports:
-      - "8082:80"
-    depends_on:
-      - mysql
-
-  kafka:
-    image: apache/kafka:3.7.0
-    container_name: kafka
-    environment:
-      KAFKA_NODE_ID: "1"
-      KAFKA_PROCESS_ROLES: "broker,controller"
-      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
-      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
-      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
-    ports:
-      - "9092:9092"
-    volumes:
-      - kafka_data:/var/lib/kafka
-
-  schema-registry:
-    image: confluentinc/cp-schema-registry:7.6.1
-    container_name: schema-registry
-    environment:
-      SCHEMA_REGISTRY_HOST_NAME: schema-registry
-      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: "PLAINTEXT://kafka:9092"
-      SCHEMA_REGISTRY_LISTENERS: "http://0.0.0.0:8081"
-    ports:
-      - "8081:8081"
-    depends_on:
-      - kafka
-
-  kafka-connect:
-    image: confluentinc/cp-kafka-connect:7.6.1
-    container_name: kafka-connect
-    environment:
-      CONNECT_BOOTSTRAP_SERVERS: "kafka:9092"
-      CONNECT_REST_PORT: 8083
-      CONNECT_GROUP_ID: "cdc-connect-group"
-      CONNECT_CONFIG_STORAGE_TOPIC: "cdc-connect-configs"
-      CONNECT_OFFSET_STORAGE_TOPIC: "cdc-connect-offsets"
-      CONNECT_STATUS_STORAGE_TOPIC: "cdc-connect-status"
-      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: "1"
-      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: "1"
-      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "1"
-      CONNECT_KEY_CONVERTER: "io.confluent.connect.avro.AvroConverter"
-      CONNECT_VALUE_CONVERTER: "io.confluent.connect.avro.AvroConverter"
-      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
-      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
-      CONNECT_INTERNAL_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
-      CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
-      CONNECT_REST_ADVERTISED_HOST_NAME: "kafka-connect"
-      CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components"
-    ports:
-      - "8083:8083"
-    depends_on:
-      - kafka
-      - schema-registry
-    command:
-      - bash
-      - -c
-      - |
-        echo "Installing Debezium MySQL Connector..."
-        confluent-hub install --no-prompt debezium/debezium-connector-mysql:2.4.2-1 || true
-        echo "Starting Kafka Connect..."
-        /etc/confluent/docker/run
-
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: kafka-ui
-    environment:
-      KAFKA_CLUSTERS_0_NAME: "local"
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:9092"
-    ports:
-      - "8085:8080"
-    depends_on:
-      - kafka
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
 
   airflow-init:
-    image: apache/airflow:2.9.3
-    container_name: airflow-init
-    environment:
-      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://airflow:airflow@postgres/airflow"
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__CORE__FERNET_KEY: ""
-      AIRFLOW__WEBSERVER__SECRET_KEY: "temporary-secret-key"
-    volumes:
-      - ../airflows/dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
-    depends_on:
-      - postgres
+    <<: *airflow-common
+    container_name: dwh-airflow-init
     command: >
-      bash -c "for i in {1..30}; do 
-        echo 'Attempt $i: Waiting for Postgres...'; 
-        airflow db migrate && break || sleep 5; 
-      done; 
-      airflow users create \
-      --username admin \
-      --password admin \
-      --firstname Admin \
-      --lastname User \
-      --role Admin \
+      bash -c "airflow db migrate &&
+      airflow users create
+      --username admin
+      --password admin
+      --firstname Admin
+      --lastname User
+      --role Admin
       --email admin@local.com || true"
 
   airflow-webserver:
-    image: apache/airflow:2.9.3
-    container_name: airflow-webserver
-    environment:
-      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://airflow:airflow@postgres/airflow"
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__CORE__FERNET_KEY: ""
-      AIRFLOW__WEBSERVER__SECRET_KEY: "temporary-secret-key"
+    <<: *airflow-common
+    container_name: dwh-airflow-webserver
     ports:
       - "8080:8080"
-    volumes:
-      - ../airflows/dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
     command: ["airflow", "webserver"]
 
   airflow-scheduler:
-    image: apache/airflow:2.9.3
-    container_name: airflow-scheduler
-    environment:
-      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://airflow:airflow@postgres/airflow"
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__CORE__FERNET_KEY: ""
-      AIRFLOW__WEBSERVER__SECRET_KEY: "temporary-secret-key"
-    volumes:
-      - ../airflows/dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
+    <<: *airflow-common
+    container_name: dwh-airflow-scheduler
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
     command: ["airflow", "scheduler"]
 
 volumes:
-  mysql_data:
   postgres_data:
-  kafka_data:
+  airflow_logs:
+

@@ -1,30 +1,38 @@
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
+.venv/
+*.venv
 
-# Spark
+# Spark and generated data
 checkpoints/
 logs/
+hadoop/
+data/bronze/
+data/silver/
+data/checkpoints/
+data/lakehouse/
+data/preview/
+test_parquet/
+*.csv
+*.parquet
 
-# Data directory
-data/
+# Generated SQL/docs
+docs/athena_silver_ddl.sql
+docs/athena_lakehouse_ddl.sql
 
-# Airflow
+# Airflow local state
 airflow.db
 airflow-webserver.pid
+docker/airflow/logs/
 
-# Env
+# Env and OS files
 .env
-
-# Mac
 .DS_Store
 
 # IDE
 .vscode/
+.idea/
 
-# Data (nếu có file lớn)
-*.csv
-*.parquet
-
-# Docker
+# Docker/logs
 *.log
