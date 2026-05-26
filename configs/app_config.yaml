@@ -9,23 +9,6 @@ mysql:
   database: app
   driver: pymysql
 
-## Kafka Configuration
-kafka:
-  bootstrap_servers: localhost:9092
-  schema_registry_url: http://localhost:8081
-  
-  # CDC Topic prefix (created by Debezium)
-  cdc_topic_prefix: cdc.app
-  
-  # Consumer group
-  consumer_group: spark-silver-consumer
-  
-  # Topic names (auto-created by Debezium)
-  topics:
-    customers: cdc.app.olist_customers_dataset
-    orders: cdc.app.olist_orders_dataset
-    order_items: cdc.app.olist_order_items_dataset
-
 ## Spark Configuration
 spark:
   app_name: CDCStreamingPipeline

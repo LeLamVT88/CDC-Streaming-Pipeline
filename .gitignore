@@ -3,7 +3,6 @@ __pycache__/
 *.pyc
 
 # Spark
-checkpoints/
 logs/
 
 # Data directory

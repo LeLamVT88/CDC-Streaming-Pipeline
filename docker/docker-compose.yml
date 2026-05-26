@@ -41,84 +41,7 @@ services:
     depends_on:
       - mysql
 
-  kafka:
-    image: apache/kafka:3.7.0
-    container_name: kafka
-    environment:
-      KAFKA_NODE_ID: "1"
-      KAFKA_PROCESS_ROLES: "broker,controller"
-      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
-      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
-      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
-      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT"
-      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
-    ports:
-      - "9092:9092"
-    volumes:
-      - kafka_data:/var/lib/kafka
-
-  schema-registry:
-    image: confluentinc/cp-schema-registry:7.6.1
-    container_name: schema-registry
-    environment:
-      SCHEMA_REGISTRY_HOST_NAME: schema-registry
-      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: "PLAINTEXT://kafka:9092"
-      SCHEMA_REGISTRY_LISTENERS: "http://0.0.0.0:8081"
-    ports:
-      - "8081:8081"
-    depends_on:
-      - kafka
-
-  kafka-connect:
-    image: confluentinc/cp-kafka-connect:7.6.1
-    container_name: kafka-connect
-    environment:
-      CONNECT_BOOTSTRAP_SERVERS: "kafka:9092"
-      CONNECT_REST_PORT: 8083
-      CONNECT_GROUP_ID: "cdc-connect-group"
-      CONNECT_CONFIG_STORAGE_TOPIC: "cdc-connect-configs"
-      CONNECT_OFFSET_STORAGE_TOPIC: "cdc-connect-offsets"
-      CONNECT_STATUS_STORAGE_TOPIC: "cdc-connect-status"
-      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: "1"
-      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: "1"
-      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "1"
-      CONNECT_KEY_CONVERTER: "io.confluent.connect.avro.AvroConverter"
-      CONNECT_VALUE_CONVERTER: "io.confluent.connect.avro.AvroConverter"
-      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
-      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
-      CONNECT_INTERNAL_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
-      CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
-      CONNECT_REST_ADVERTISED_HOST_NAME: "kafka-connect"
-      CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components"
-    ports:
-      - "8083:8083"
-    depends_on:
-      - kafka
-      - schema-registry
-    command:
-      - bash
-      - -c
-      - |
-        echo "Installing Debezium MySQL Connector..."
-        confluent-hub install --no-prompt debezium/debezium-connector-mysql:2.4.2-1 || true
-        echo "Starting Kafka Connect..."
-        /etc/confluent/docker/run
-
-  kafka-ui:
-    image: provectuslabs/kafka-ui:latest
-    container_name: kafka-ui
-    environment:
-      KAFKA_CLUSTERS_0_NAME: "local"
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:9092"
-    ports:
-      - "8085:8080"
-    depends_on:
-      - kafka
-
+  
   airflow-init:
     image: apache/airflow:2.9.3
     container_name: airflow-init
@@ -192,4 +115,4 @@ services:
 volumes:
   mysql_data:
   postgres_data:
-  kafka_data:
+  
