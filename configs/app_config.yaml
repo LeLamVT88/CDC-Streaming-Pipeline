@@ -1,49 +1,47 @@
-# CDC Streaming Pipeline Configuration
+project:
+  name: AWS Medallion Lakehouse
+  environment: dev
+  pipeline: olist_medallion_pipeline
 
-## MySQL Configuration
-mysql:
-  host: localhost
-  port: 3306
-  user: root
-  password: root
-  database: app
-  driver: pymysql
+aws:
+  region: ap-southeast-1
+  bucket: olist-lakehouse-data
 
-## Spark Configuration
-spark:
-  app_name: CDCStreamingPipeline
-  master: local[*]
-  
-  # Streaming settings
-  streaming:
-    duration_seconds: 30
-    checkpoint_dir: checkpoints/
-    
-  # Performance tuning
-  executors: 4
-  executor_memory: 2g
-  executor_cores: 2
-
-## Data Paths
 paths:
   seed: db/seed
-  bronze: data/bronze
-  silver: data/silver
-  checkpoint: checkpoints/
-  
-  # Parquet/Delta output
-  format: parquet  # or "delta"
-  mode: overwrite
 
-## Debezium Connector Settings
-debezium:
-  connector_class: io.debezium.connector.mysql.MySqlConnector
-  tasks_max: 1
-  snapshot_mode: initial  # or "incremental", "when_needed", "never"
-  tombstones_on_delete: true
-  include_schema_changes: true
+s3:
+  bronze_prefix: bronze
+  silver_prefix: silver
+  gold_prefix: gold
+  bronze_uri: s3a://olist-lakehouse-data/bronze
+  silver_uri: s3a://olist-lakehouse-data/silver
+  gold_uri: s3a://olist-lakehouse-data/gold
 
-## Logging
-logging:
-  level: INFO  # DEBUG, INFO, WARN, ERROR
-  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+layers:
+  source: db/seed
+  bronze: s3://olist-lakehouse-data/bronze
+  silver: s3://olist-lakehouse-data/silver
+  gold: s3://olist-lakehouse-data/gold
+
+athena:
+  database: olist_lakehouse
+  workgroup: primary
+  output_location: s3://olist-lakehouse-data/athena-results/
+
+spark:
+  app_name: OlistSilverClean
+  master: local[*]
+  hadoop_aws_package: org.apache.hadoop:hadoop-aws:3.4.1
+  s3_endpoint: s3.ap-southeast-1.amazonaws.com
+
+tables:
+  - olist_customers_dataset
+  - olist_geolocation_dataset
+  - olist_order_items_dataset
+  - olist_order_payments_dataset
+  - olist_order_reviews_dataset
+  - olist_orders_dataset
+  - olist_products_dataset
+  - olist_sellers_dataset
+  - product_category_name_translation

@@ -1,0 +1,6 @@
+boto3
+pandas
+pyarrow
+pyspark==3.5.3
+apache-airflow-providers-amazon
+PyYAML

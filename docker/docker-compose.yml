@@ -1,118 +1,90 @@
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: mysql
-    command: >
-      --server-id=1
-      --log-bin=mysql-bin
-      --binlog-format=ROW
-      --binlog-row-image=FULL
-      --binlog-expire-logs-seconds=864000
-    environment:
-      MYSQL_ROOT_PASSWORD: "root"
-      MYSQL_DATABASE: "app"
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-
   postgres:
     image: postgres:16
-    container_name: postgres
+    container_name: medallion-airflow-postgres
     environment:
-      POSTGRES_USER: "airflow"
-      POSTGRES_PASSWORD: "airflow"
-      POSTGRES_DB: "airflow"
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  phpmyadmin:
-    image: phpmyadmin:latest
-    container_name: phpmyadmin
-    environment:
-      PMA_HOST: mysql
-      PMA_PORT: 3306
-      PMA_USER: root
-      PMA_PASSWORD: root
-    ports:
-      - "8082:80"
-    depends_on:
-      - mysql
-
-  
   airflow-init:
-    image: apache/airflow:2.9.3
-    container_name: airflow-init
-    environment:
-      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://airflow:airflow@postgres/airflow"
+    build:
+      context: .
+      dockerfile: airflow/Dockerfile
+    container_name: medallion-airflow-init
+    environment: &airflow-env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__CORE__FERNET_KEY: ""
-      AIRFLOW__WEBSERVER__SECRET_KEY: "temporary-secret-key"
-    volumes:
-      - ../airflows/dags:/opt/airflow/dags
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__WEBSERVER__SECRET_KEY: temporary-secret-key
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-ap-southeast-1}
+      S3_BUCKET: ${S3_BUCKET:-}
+      BRONZE_PREFIX: ${BRONZE_PREFIX:-bronze}
+      SILVER_PREFIX: ${SILVER_PREFIX:-silver}
+      GOLD_PREFIX: ${GOLD_PREFIX:-gold}
+      ATHENA_DATABASE: ${ATHENA_DATABASE:-olist_lakehouse}
+      ATHENA_OUTPUT_LOCATION: ${ATHENA_OUTPUT_LOCATION:-s3://olist-lakehouse-data/athena-results/}
+    volumes: &airflow-volumes
+      - ../dags:/opt/airflow/dags
+      - ../scripts:/opt/airflow/scripts
+      - ../configs:/opt/airflow/configs
+      - ../db:/opt/airflow/db
+      - ../data:/opt/airflow/data
       - ./airflow/logs:/opt/airflow/logs
       - ./airflow/plugins:/opt/airflow/plugins
-    depends_on:
-      - postgres
-    command: >
-      bash -c "for i in {1..30}; do 
-        echo 'Attempt $i: Waiting for Postgres...'; 
-        airflow db migrate && break || sleep 5; 
-      done; 
-      airflow users create \
-      --username admin \
-      --password admin \
-      --firstname Admin \
-      --lastname User \
-      --role Admin \
-      --email admin@local.com || true"
-
-  airflow-webserver:
-    image: apache/airflow:2.9.3
-    container_name: airflow-webserver
-    environment:
-      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://airflow:airflow@postgres/airflow"
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__CORE__FERNET_KEY: ""
-      AIRFLOW__WEBSERVER__SECRET_KEY: "temporary-secret-key"
-    ports:
-      - "8080:8080"
-    volumes:
-      - ../airflows/dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
+      - ~/.aws:/home/airflow/.aws:ro
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
+    command: >
+      bash -c "airflow db migrate &&
+      airflow users create
+      --username admin
+      --password admin
+      --firstname Admin
+      --lastname User
+      --role Admin
+      --email admin@example.com || true"
+
+  airflow-webserver:
+    build:
+      context: .
+      dockerfile: airflow/Dockerfile
+    container_name: medallion-airflow-webserver
+    environment: *airflow-env
+    ports:
+      - "8080:8080"
+    volumes: *airflow-volumes
+    depends_on:
+      postgres:
+        condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
     command: ["airflow", "webserver"]
 
   airflow-scheduler:
-    image: apache/airflow:2.9.3
-    container_name: airflow-scheduler
-    environment:
-      AIRFLOW__CORE__EXECUTOR: "LocalExecutor"
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://airflow:airflow@postgres/airflow"
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__CORE__FERNET_KEY: ""
-      AIRFLOW__WEBSERVER__SECRET_KEY: "temporary-secret-key"
-    volumes:
-      - ../airflows/dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
+    build:
+      context: .
+      dockerfile: airflow/Dockerfile
+    container_name: medallion-airflow-scheduler
+    environment: *airflow-env
+    volumes: *airflow-volumes
     depends_on:
       postgres:
-        condition: service_started
+        condition: service_healthy
       airflow-init:
         condition: service_completed_successfully
     command: ["airflow", "scheduler"]
 
 volumes:
-  mysql_data:
   postgres_data:
-  

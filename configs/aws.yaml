@@ -1,0 +1,5 @@
+region: ap-southeast-1
+bucket: olist-lakehouse-data
+
+# Do not store access keys here.
+# Use ~/.aws/credentials, AWS_PROFILE, IAM role, or environment variables.
