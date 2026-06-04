@@ -33,6 +33,7 @@ services:
       SILVER_PREFIX: ${SILVER_PREFIX:-silver}
       GOLD_PREFIX: ${GOLD_PREFIX:-gold}
       ATHENA_DATABASE: ${ATHENA_DATABASE:-olist_lakehouse}
+      ATHENA_WORKGROUP: ${ATHENA_WORKGROUP:-primary}
       ATHENA_OUTPUT_LOCATION: ${ATHENA_OUTPUT_LOCATION:-s3://olist-lakehouse-data/athena-results/}
     volumes: &airflow-volumes
       - ../dags:/opt/airflow/dags
