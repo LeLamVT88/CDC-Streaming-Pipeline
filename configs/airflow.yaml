@@ -7,4 +7,5 @@ tasks:
   bronze_upload: scripts/bronze/upload_csv_to_bronze.py
   silver_clean: scripts/silver/bronze_to_silver.py
   gold_transform: scripts/gold/create_fact_table.py
-  athena_refresh: scripts/athena/create_tables.sql
+  athena_create_tables: scripts/athena/create_tables.sql
+  athena_create_views: scripts/athena/create_views.sql

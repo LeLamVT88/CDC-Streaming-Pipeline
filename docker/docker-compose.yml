@@ -28,7 +28,7 @@ services:
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
       AIRFLOW__WEBSERVER__SECRET_KEY: temporary-secret-key
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-ap-southeast-1}
-      S3_BUCKET: ${S3_BUCKET:-}
+      S3_BUCKET: ${S3_BUCKET:-olist-lakehouse-data}
       BRONZE_PREFIX: ${BRONZE_PREFIX:-bronze}
       SILVER_PREFIX: ${SILVER_PREFIX:-silver}
       GOLD_PREFIX: ${GOLD_PREFIX:-gold}

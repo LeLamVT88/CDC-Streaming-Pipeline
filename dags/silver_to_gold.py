@@ -1,9 +1,13 @@
 """Airflow DAG for the Silver -> Gold Spark transformation."""
 
+from __future__ import annotations
+
 from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
+
+from _common import DEFAULT_ARGS, PIPELINE_ENV, project_command
 
 
 with DAG(
@@ -13,13 +17,16 @@ with DAG(
     schedule=None,
     catchup=False,
     default_args={
-        "owner": "data-platform",
+        **DEFAULT_ARGS,
         "retries": 1,
-        "retry_delay": timedelta(minutes=2),
+        "retry_delay": timedelta(minutes=3),
     },
-    tags=["s3", "silver", "gold", "spark"],
+    tags=["olist", "s3", "silver", "gold", "spark"],
 ) as dag:
-    build_gold_models = BashOperator(
-        task_id="build_gold_models",
-        bash_command="cd /opt/airflow && python scripts/gold/create_fact_table.py",
+    build_gold_layer = BashOperator(
+        task_id="build_gold_layer",
+        bash_command=project_command("python scripts/gold/create_fact_table.py"),
+        env=PIPELINE_ENV,
+        append_env=True,
+        execution_timeout=timedelta(hours=2),
     )
