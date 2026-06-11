@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 
-from _common import DEFAULT_ARGS, PIPELINE_ENV, project_command
+from _common import DEFAULT_ARGS, PIPELINE_ENV, spark_submit_command
 
 
 with DAG(
@@ -25,7 +25,7 @@ with DAG(
 ) as dag:
     clean_bronze_to_silver = BashOperator(
         task_id="clean_bronze_to_silver",
-        bash_command=project_command("python scripts/silver/bronze_to_silver.py"),
+        bash_command=spark_submit_command("scripts/silver/bronze_to_silver.py"),
         env=PIPELINE_ENV,
         append_env=True,
         execution_timeout=timedelta(hours=2),

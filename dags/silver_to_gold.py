@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 
-from _common import DEFAULT_ARGS, PIPELINE_ENV, project_command
+from _common import DEFAULT_ARGS, PIPELINE_ENV, spark_submit_command
 
 
 with DAG(
@@ -25,7 +25,7 @@ with DAG(
 ) as dag:
     build_gold_layer = BashOperator(
         task_id="build_gold_layer",
-        bash_command=project_command("python scripts/gold/create_fact_table.py"),
+        bash_command=spark_submit_command("scripts/gold/create_fact_table.py"),
         env=PIPELINE_ENV,
         append_env=True,
         execution_timeout=timedelta(hours=2),

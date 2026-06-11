@@ -95,8 +95,8 @@ def build_spark(app_name="OlistSilverToGold", silver_path=None, gold_path=None):
         )
         jars = os.environ.get("HADOOP_AWS_JARS")
         repositories = os.environ.get("SPARK_JARS_REPOSITORIES", "https://repo.maven.apache.org/maven2")
-        endpoint = get_nested(CONFIG, "spark", "s3_endpoint", default=None)
-        region = get_nested(CONFIG, "aws", "region", default="ap-southeast-1")
+        endpoint = os.environ.get("S3_ENDPOINT", get_nested(CONFIG, "spark", "s3_endpoint", default=None))
+        region = os.environ.get("AWS_DEFAULT_REGION", get_nested(CONFIG, "aws", "region", default="ap-southeast-1"))
 
         if jars:
             builder = builder.config("spark.jars", jars)

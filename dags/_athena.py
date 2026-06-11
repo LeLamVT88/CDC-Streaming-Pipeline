@@ -68,6 +68,12 @@ def wait_for_query(client, query_execution_id, timeout_seconds=900):
 
 
 def execute_sql_file(sql_path):
+    if os.environ.get("ATHENA_SKIP_EXECUTION", "false").lower() in {"1", "true", "yes"}:
+        path = Path(sql_path)
+        statements = split_sql_statements(path.read_text(encoding="utf-8"))
+        logging.info("Skipping %s Athena statements from %s because ATHENA_SKIP_EXECUTION is true", len(statements), path)
+        return
+
     import boto3
 
     path = Path(sql_path)

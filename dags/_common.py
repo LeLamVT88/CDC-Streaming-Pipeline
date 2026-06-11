@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 from pathlib import Path
 
 
@@ -96,6 +97,16 @@ GOLD_PATH = os.environ.get(
     "GOLD_PATH",
     get_nested(CONFIG, "s3", "gold_uri", default=f"s3a://{S3_BUCKET}/{GOLD_PREFIX}"),
 )
+HADOOP_AWS_PACKAGE = os.environ.get(
+    "HADOOP_AWS_PACKAGE",
+    get_nested(CONFIG, "spark", "hadoop_aws_package", default="org.apache.hadoop:hadoop-aws:3.4.1"),
+)
+HADOOP_AWS_JARS = os.environ.get("HADOOP_AWS_JARS")
+SPARK_JARS_REPOSITORIES = os.environ.get("SPARK_JARS_REPOSITORIES", "https://repo.maven.apache.org/maven2")
+S3_ENDPOINT = os.environ.get(
+    "S3_ENDPOINT",
+    get_nested(CONFIG, "spark", "s3_endpoint", default=f"s3.{AWS_REGION}.amazonaws.com"),
+)
 ATHENA_WORKGROUP = os.environ.get(
     "ATHENA_WORKGROUP",
     get_nested(CONFIG, "athena", "workgroup", default="primary"),
@@ -104,6 +115,7 @@ ATHENA_OUTPUT_LOCATION = os.environ.get(
     "ATHENA_OUTPUT_LOCATION",
     get_nested(CONFIG, "athena", "output_location", default=f"s3://{S3_BUCKET}/athena-results/"),
 )
+ATHENA_SKIP_EXECUTION = os.environ.get("ATHENA_SKIP_EXECUTION", "false")
 SEED_DIR = os.environ.get("SEED_DIR", str(PROJECT_ROOT / get_nested(CONFIG, "paths", "seed", default="db/seed")))
 
 DEFAULT_ARGS = {
@@ -112,6 +124,8 @@ DEFAULT_ARGS = {
 }
 
 PIPELINE_ENV = {
+    "AIRFLOW_PROJECT_ROOT": str(PROJECT_ROOT),
+    "PYTHONPATH": str(PROJECT_ROOT),
     "AWS_DEFAULT_REGION": AWS_REGION,
     "S3_BUCKET": S3_BUCKET,
     "BRONZE_PREFIX": BRONZE_PREFIX,
@@ -120,11 +134,47 @@ PIPELINE_ENV = {
     "BRONZE_PATH": BRONZE_PATH,
     "SILVER_PATH": SILVER_PATH,
     "GOLD_PATH": GOLD_PATH,
+    "HADOOP_AWS_PACKAGE": HADOOP_AWS_PACKAGE,
+    "SPARK_JARS_REPOSITORIES": SPARK_JARS_REPOSITORIES,
+    "S3_ENDPOINT": S3_ENDPOINT,
     "ATHENA_WORKGROUP": ATHENA_WORKGROUP,
     "ATHENA_OUTPUT_LOCATION": ATHENA_OUTPUT_LOCATION,
+    "ATHENA_SKIP_EXECUTION": ATHENA_SKIP_EXECUTION,
     "SEED_DIR": SEED_DIR,
 }
+if HADOOP_AWS_JARS:
+    PIPELINE_ENV["HADOOP_AWS_JARS"] = HADOOP_AWS_JARS
 
 
 def project_command(command: str) -> str:
-    return f"cd {PROJECT_ROOT} && {command}"
+    return f"cd {shlex.quote(str(PROJECT_ROOT))} && {command}"
+
+
+def uses_s3(*paths: str) -> bool:
+    return any(str(path).startswith(("s3://", "s3a://")) for path in paths)
+
+
+def spark_submit_command(script_path: str) -> str:
+    spark_options = []
+    if uses_s3(BRONZE_PATH, SILVER_PATH, GOLD_PATH):
+        spark_options.extend(
+            [
+                "--conf",
+                f"spark.hadoop.fs.s3a.endpoint.region={AWS_REGION}",
+            ]
+        )
+        if S3_ENDPOINT:
+            spark_options.extend(["--conf", f"spark.hadoop.fs.s3a.endpoint={S3_ENDPOINT}"])
+        if HADOOP_AWS_JARS:
+            spark_options.extend(["--jars", HADOOP_AWS_JARS])
+        else:
+            spark_options.extend(["--packages", HADOOP_AWS_PACKAGE])
+            if SPARK_JARS_REPOSITORIES:
+                spark_options.extend(["--repositories", SPARK_JARS_REPOSITORIES])
+
+    quoted_options = " ".join(shlex.quote(str(option)) for option in spark_options)
+    command_parts = ["spark-submit"]
+    if quoted_options:
+        command_parts.append(quoted_options)
+    command_parts.append(shlex.quote(script_path))
+    return project_command(" ".join(command_parts))

@@ -27,14 +27,20 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
       AIRFLOW__WEBSERVER__SECRET_KEY: temporary-secret-key
+      AIRFLOW_PROJECT_ROOT: /opt/airflow
+      PYTHONPATH: /opt/airflow
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-ap-southeast-1}
       S3_BUCKET: ${S3_BUCKET:-olist-lakehouse-data}
       BRONZE_PREFIX: ${BRONZE_PREFIX:-bronze}
       SILVER_PREFIX: ${SILVER_PREFIX:-silver}
       GOLD_PREFIX: ${GOLD_PREFIX:-gold}
+      BRONZE_PATH: ${BRONZE_PATH:-/opt/airflow/data/bronze}
+      SILVER_PATH: ${SILVER_PATH:-/opt/airflow/data/silver}
+      GOLD_PATH: ${GOLD_PATH:-/opt/airflow/data/gold}
       ATHENA_DATABASE: ${ATHENA_DATABASE:-olist_lakehouse}
       ATHENA_WORKGROUP: ${ATHENA_WORKGROUP:-primary}
       ATHENA_OUTPUT_LOCATION: ${ATHENA_OUTPUT_LOCATION:-s3://olist-lakehouse-data/athena-results/}
+      ATHENA_SKIP_EXECUTION: ${ATHENA_SKIP_EXECUTION:-true}
     volumes: &airflow-volumes
       - ../dags:/opt/airflow/dags
       - ../scripts:/opt/airflow/scripts

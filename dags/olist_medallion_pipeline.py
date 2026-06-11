@@ -9,7 +9,7 @@ from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 
 from _athena import execute_sql_file
-from _common import DEFAULT_ARGS, PIPELINE_ENV, PROJECT_ROOT, project_command
+from _common import DEFAULT_ARGS, PIPELINE_ENV, PROJECT_ROOT, project_command, spark_submit_command
 
 
 ATHENA_SQL_DIR = PROJECT_ROOT / "scripts" / "athena"
@@ -38,7 +38,7 @@ with DAG(
 
     clean_bronze_to_silver = BashOperator(
         task_id="clean_bronze_to_silver",
-        bash_command=project_command("python scripts/silver/bronze_to_silver.py"),
+        bash_command=spark_submit_command("scripts/silver/bronze_to_silver.py"),
         env=PIPELINE_ENV,
         append_env=True,
         execution_timeout=timedelta(hours=2),
@@ -46,7 +46,7 @@ with DAG(
 
     build_gold_layer = BashOperator(
         task_id="build_gold_layer",
-        bash_command=project_command("python scripts/gold/create_fact_table.py"),
+        bash_command=spark_submit_command("scripts/gold/create_fact_table.py"),
         env=PIPELINE_ENV,
         append_env=True,
         execution_timeout=timedelta(hours=2),

@@ -61,8 +61,31 @@ VALID_PAYMENT_TYPES = [
 ]
 
 
-def build_spark(app_name="OlistSilverClean"):
-    spark = SparkSession.builder.appName(app_name).master("local[*]").getOrCreate()
+def build_spark(app_name="OlistSilverClean", bronze_path=None, silver_path=None):
+    master = get_nested(CONFIG, "spark", "master", default="local[*]")
+    builder = SparkSession.builder.appName(app_name).master(master)
+
+    paths = [str(path or "") for path in [bronze_path, silver_path]]
+    if any(path.startswith(("s3://", "s3a://")) for path in paths):
+        package = os.environ.get(
+            "HADOOP_AWS_PACKAGE",
+            get_nested(CONFIG, "spark", "hadoop_aws_package", default="org.apache.hadoop:hadoop-aws:3.4.1"),
+        )
+        jars = os.environ.get("HADOOP_AWS_JARS")
+        repositories = os.environ.get("SPARK_JARS_REPOSITORIES", "https://repo.maven.apache.org/maven2")
+        endpoint = os.environ.get("S3_ENDPOINT", get_nested(CONFIG, "spark", "s3_endpoint", default=None))
+        region = os.environ.get("AWS_DEFAULT_REGION", get_nested(CONFIG, "aws", "region", default="ap-southeast-1"))
+
+        if jars:
+            builder = builder.config("spark.jars", jars)
+        else:
+            builder = builder.config("spark.jars.packages", package)
+            builder = builder.config("spark.jars.repositories", repositories)
+        builder = builder.config("spark.hadoop.fs.s3a.endpoint.region", region)
+        if endpoint:
+            builder = builder.config("spark.hadoop.fs.s3a.endpoint", endpoint)
+
+    spark = builder.getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
     return spark
 
@@ -330,7 +353,7 @@ def parse_args():
 def main():
     args = parse_args()
 
-    spark = build_spark()
+    spark = build_spark(bronze_path=args.bronze_path, silver_path=args.silver_path)
     try:
         clean_all_tables(spark, args.bronze_path, args.silver_path, args.tables)
     finally:
